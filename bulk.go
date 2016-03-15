@@ -110,7 +110,11 @@ func (s *BulkService) bodyAsString() (string, error) {
 			return "", err
 		}
 		for _, line := range source {
-			_, err := buf.WriteString(fmt.Sprintf("%s\n", line))
+			_, err := buf.WriteString(line)
+			if err != nil {
+				return "", nil
+			}
+			_, err = buf.WriteRune('\n')
 			if err != nil {
 				return "", nil
 			}
