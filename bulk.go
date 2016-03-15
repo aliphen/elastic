@@ -26,7 +26,8 @@ type BulkService struct {
 	refresh *bool
 	pretty  bool
 
-	sizeInBytes int64
+	sizeInBytes      int64
+	sizeEstimatedPos int
 }
 
 func NewBulkService(client *Client) *BulkService {
@@ -40,6 +41,7 @@ func NewBulkService(client *Client) *BulkService {
 func (s *BulkService) reset() {
 	s.requests = make([]BulkableRequest, 0)
 	s.sizeInBytes = 0
+	s.sizeEstimatedPos = 0
 }
 
 func (s *BulkService) Index(index string) *BulkService {
@@ -69,11 +71,21 @@ func (s *BulkService) Pretty(pretty bool) *BulkService {
 
 func (s *BulkService) Add(r BulkableRequest) *BulkService {
 	s.requests = append(s.requests, r)
-	s.sizeInBytes += s.estimateSizeInBytes(r)
 	return s
 }
 
+// EstimatedSizeInBytes returns the size of the underlying JSON payload.
+// It is quite costly, use with caution, non thread-safe
 func (s *BulkService) EstimatedSizeInBytes() int64 {
+	if s.sizeEstimatedPos == len(s.requests) {
+		return s.sizeInBytes
+	}
+
+	for _, r := range s.requests[s.sizeEstimatedPos:] {
+		s.sizeInBytes += s.estimateSizeInBytes(r)
+		s.sizeEstimatedPos++
+	}
+
 	return s.sizeInBytes
 }
 
