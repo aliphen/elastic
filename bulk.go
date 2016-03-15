@@ -10,12 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 
 	"gopkg.in/olivere/elastic.v3/uritemplates"
 )
 
 type BulkService struct {
 	client *Client
+
+	FastParse bool
 
 	index    string
 	_type    string
@@ -170,6 +173,15 @@ func (s *BulkService) Do() (*BulkResponse, error) {
 	}
 
 	// Return results
+	if s.FastParse {
+		ret, err := s.fastParseResponse(res.Body)
+		if err == nil && !ret.Errors {
+			s.reset()
+
+			return ret, err
+		}
+	}
+
 	ret := new(BulkResponse)
 	if err := json.Unmarshal(res.Body, ret); err != nil {
 		return nil, err
@@ -179,6 +191,68 @@ func (s *BulkService) Do() (*BulkResponse, error) {
 	s.reset()
 
 	return ret, nil
+}
+
+func (s *BulkService) fastParseResponse(rawResp json.RawMessage) (*BulkResponse, error) {
+	var took int
+	var errors bool
+	var err error
+
+	maxLookAhead := 50
+	if len(rawResp) > maxLookAhead {
+		// use a string for convenience
+		resp := string(rawResp[:50])
+
+		// reading: no variable 0, took 1, errors 2
+		var reading int
+		// variables already read
+		var read int
+
+		var pos int
+		for pos < maxLookAhead && read < 2 {
+			switch resp[pos] {
+			case '{':
+				pos++
+				continue
+			case '"':
+				pos++
+				continue
+			case ',':
+				pos++
+				continue
+			case ':':
+				// read till next key
+				nextKey := pos + 1
+				for resp[nextKey] != ',' && nextKey < maxLookAhead {
+					nextKey++
+				}
+				if reading == 1 {
+					took, err = strconv.Atoi(resp[pos+1 : nextKey])
+				} else if reading == 2 {
+					errors, err = strconv.ParseBool(resp[pos+1 : nextKey])
+				}
+				if err != nil {
+					break
+				}
+				read++
+				pos = nextKey
+			default:
+				if resp[pos:pos+4] == "took" {
+					reading = 1
+					pos += 4
+				} else if resp[pos:pos+6] == "errors" {
+					reading = 2
+					pos += 6
+				} else {
+					err = fmt.Errorf("cannot parse %s", resp[pos:])
+					break
+				}
+			}
+
+		}
+	}
+
+	return &BulkResponse{Took: took, Errors: errors}, err
 }
 
 // BulkResponse is a response to a bulk execution.
