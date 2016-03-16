@@ -461,3 +461,37 @@ func TestBulkEstimatedSizeInBytes(t *testing.T) {
 		t.Errorf("expected an EstimatedSizeInBytes = %d; got: %v", want, got)
 	}
 }
+
+func BenchmarkBodyAsString(b *testing.B) {
+	// prepare documents to run the benchmark & use a variety of requests
+	// we're not going to make requests (just format them) so don't bother having
+	// a running ES instance
+	client := setupTestClient(b, SetSniff(false), SetHealthcheck(false))
+
+	tweet1 := tweet{User: "olivere", Message: "Welcome to Golang and Elasticsearch."}
+	tweet2 := tweet{User: "sandrae", Message: "Dancing all night long. Yeah."}
+
+	benchReqs := []BulkableRequest{
+		NewBulkIndexRequest().Index(testIndexName).Type("tweet").Id("1").Doc(tweet1),
+		NewBulkIndexRequest().OpType("create").Index(testIndexName).Type("tweet").Id("2").Doc(tweet2),
+		NewBulkDeleteRequest().Index(testIndexName).Type("tweet").Id("1"),
+		NewBulkUpdateRequest().Index(testIndexName).Type("tweet").Id("2").
+			Doc(struct {
+			Retweets int `json:"retweets"`
+		}{
+			Retweets: 42,
+		}),
+	}
+
+	bulkRequest := client.Bulk()
+	for _, r := range benchReqs {
+		bulkRequest = bulkRequest.Add(r)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		bulkRequest.bodyAsString()
+	}
+}
