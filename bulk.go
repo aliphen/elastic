@@ -87,18 +87,17 @@ func (s *BulkService) NumberOfActions() int {
 }
 
 func (s *BulkService) bodyAsString() (string, error) {
-	buf := bytes.NewBufferString("")
+	var buf bytes.Buffer
 
 	for _, req := range s.requests {
 		source, err := req.Source()
 		if err != nil {
 			return "", err
 		}
+
 		for _, line := range source {
-			_, err := buf.WriteString(fmt.Sprintf("%s\n", line))
-			if err != nil {
-				return "", nil
-			}
+			buf.WriteString(line)
+			buf.WriteRune('\n')
 		}
 	}
 
